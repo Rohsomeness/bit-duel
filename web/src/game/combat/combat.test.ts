@@ -51,6 +51,42 @@ describe("match combat", () => {
     expect(m.fighters[1].hp).toBeLessThan(hp1);
   });
 
+  it("fists connect in clinch (body-edge hitboxes)", () => {
+    const m = closeMatch("fists", "fists");
+    // Clinch distance after push separation (~40px centers)
+    m.fighters[0].x = 400;
+    m.fighters[1].x = 440;
+    const hp1 = m.fighters[1].hp;
+    let hit = false;
+    for (let i = 0; i < 30; i++) {
+      m.step(Action.LIGHT, Action.IDLE);
+      if (m.fighters[1].hp < hp1) {
+        hit = true;
+        break;
+      }
+    }
+    expect(hit).toBe(true);
+    expect(m.fighters[1].hp).toBeLessThan(hp1);
+  });
+
+  it("hitbox extends from body edge not center", () => {
+    const m = closeMatch("fists", "fists");
+    m.fighters[0].x = 400;
+    m.fighters[0].facing = 1;
+    m.step(Action.LIGHT, Action.IDLE);
+    // advance to active frames
+    for (let i = 0; i < 5; i++) m.step(Action.IDLE, Action.IDLE);
+    const f = m.fighters[0];
+    // Force active if needed
+    if (!f.attackActive && f.attackMove) {
+      f.attackTimer = f.attackMove.startup;
+    }
+    const hb = f.hitboxRect();
+    expect(hb).not.toBeNull();
+    // Front edge of body is at x+20; hitbox should start there, not at x
+    expect(hb!.left).toBeGreaterThanOrEqual(400 + 19);
+  });
+
   it("spear hits from farther than fists miss", () => {
     // Fists at long range — should miss
     const fists = closeMatch("fists", "fists");

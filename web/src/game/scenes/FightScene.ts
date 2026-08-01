@@ -32,6 +32,8 @@ export class FightScene extends Phaser.Scene {
   private accum = 0;
   private readonly stepMs = 1000 / C.FPS;
   private lastCallout = "";
+  private prevHp: [number, number] = [0, 0];
+  private dmgFloats: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super("Fight");
@@ -49,6 +51,7 @@ export class FightScene extends Phaser.Scene {
     const { player, rival, playerWeapon, rivalWeapon, opponentAI } = this.selection;
     this.match = new Match(player, playerWeapon, rival, rivalWeapon);
     this.ai = makeAI(opponentAI, (Date.now() % 9000) + 1);
+    this.prevHp = [this.match.fighters[0].hp, this.match.fighters[1].hp];
 
     // Static stage (no scrolling tileSprites for perf)
     this.add.image(C.STAGE_WIDTH / 2, 180, "stage_neon").setDisplaySize(C.STAGE_WIDTH, 360);
@@ -211,10 +214,23 @@ export class FightScene extends Phaser.Scene {
       } else if (ev.startsWith("guard_break_")) {
         this.showCallout("GUARD BREAK", "#ff4d6d", 600);
         this.cameras.main.shake(140, 0.01);
-      } else if (ev.startsWith("hit_p")) {
-        this.cameras.main.shake(40, 0.003);
+      } else if (ev.startsWith("hit_p") || ev.startsWith("block_p")) {
+        this.cameras.main.shake(50, 0.004);
+      } else if (ev.startsWith("dmg_p")) {
+        // dmg_p{idx}:{amount}:...
+        const parts = ev.split(":");
+        const who = parts[0].endsWith("0") ? 0 : 1;
+        const amount = parts[1] ?? "?";
+        const f = this.match.fighters[who];
+        this.spawnDamageNumber(f.x, f.y - 80, amount, who === 1);
       }
     }
+
+    // HP drop feedback on bars
+    const [f0, f1] = this.match.fighters;
+    if (f0.hp < this.prevHp[0]) this.flashBar(this.hp0, 0xff6666);
+    if (f1.hp < this.prevHp[1]) this.flashBar(this.hp1, 0xff6666);
+    this.prevHp = [f0.hp, f1.hp];
 
     if (done) {
       this.ended = true;
@@ -244,10 +260,15 @@ export class FightScene extends Phaser.Scene {
     this.placeShield(this.shield0, f0);
     this.placeShield(this.shield1, f1);
 
-    this.hp0.width = Math.max(0, 280 * (f0.hp / f0.maxHp));
-    this.hp1.width = Math.max(0, 280 * (f1.hp / f1.maxHp));
-    this.sta0.width = Math.max(0, 280 * (f0.stamina / f0.maxStamina));
-    this.sta1.width = Math.max(0, 280 * (f1.stamina / f1.maxStamina));
+    // Phaser Rectangle: must use setSize — assigning .width does not redraw
+    const hp0w = Math.max(0, 280 * (f0.hp / f0.maxHp));
+    const hp1w = Math.max(0, 280 * (f1.hp / f1.maxHp));
+    const st0w = Math.max(0, 280 * (f0.stamina / f0.maxStamina));
+    const st1w = Math.max(0, 280 * (f1.stamina / f1.maxStamina));
+    this.hp0.setSize(hp0w, 10);
+    this.hp1.setSize(hp1w, 10);
+    this.sta0.setSize(st0w, 6);
+    this.sta1.setSize(st1w, 6);
 
     const sec = Math.max(0, Math.ceil((this.match.maxFrames - this.match.frame) / C.FPS));
     this.timerText.setText(String(sec).padStart(2, "0"));
@@ -349,5 +370,31 @@ export class FightScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.callout);
     this.tweens.add({ targets: this.callout, scale: 1, duration: 100 });
     this.tweens.add({ targets: this.callout, alpha: 0, delay: ms, duration: 220 });
+  }
+
+  private spawnDamageNumber(x: number, y: number, amount: string, onRival: boolean) {
+    const t = this.add
+      .text(x, y, `-${amount}`, {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "12px",
+        color: onRival ? "#6ef3ff" : "#ff6b9d",
+      })
+      .setOrigin(0.5)
+      .setDepth(40);
+    this.tweens.add({
+      targets: t,
+      y: y - 36,
+      alpha: 0,
+      duration: 450,
+      onComplete: () => t.destroy(),
+    });
+  }
+
+  private flashBar(bar: Phaser.GameObjects.Rectangle, color: number) {
+    const prev = bar.fillColor;
+    bar.setFillStyle(color, 1);
+    this.time.delayedCall(80, () => {
+      if (bar.active) bar.setFillStyle(prev, 1);
+    });
   }
 }

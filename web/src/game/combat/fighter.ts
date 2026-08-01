@@ -178,8 +178,13 @@ export class Fighter {
   hitboxRect(): Rect | null {
     if (!this.attackActive || !this.attackMove) return null;
     const ad = this.attackMove;
-    const left = this.facing >= 0 ? this.x : this.x - ad.range;
-    const right = this.facing >= 0 ? this.x + ad.range : this.x;
+    // Reach extends from the front edge of the body (hands), not the center —
+    // center-based hitboxes made short weapons look like they hit but miss.
+    const half = C.FIGHTER_WIDTH * 0.5;
+    const handX = this.x + this.facing * half;
+    const reach = ad.range;
+    const left = this.facing >= 0 ? handX : handX - reach;
+    const right = this.facing >= 0 ? handX + reach : handX;
     const top = this.y + ad.hitboxYOffset - ad.hitboxH * 0.5;
     return { left, top, right, bottom: top + ad.hitboxH };
   }

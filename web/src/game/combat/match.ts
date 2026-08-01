@@ -73,7 +73,8 @@ export class Match {
     const [a, b] = this.fighters;
     if (!rectsOverlap(a.bodyRect(), b.bodyRect())) return;
     const mid = (a.x + b.x) * 0.5;
-    const gap = C.FIGHTER_WIDTH * 0.55;
+    // Slightly tighter so short weapons can still trade in the clinch
+    const gap = C.FIGHTER_WIDTH * 0.48;
     if (a.x <= b.x) {
       a.x = mid - gap;
       b.x = mid + gap;
@@ -94,7 +95,8 @@ export class Match {
     const direction = attacker.x <= defender.x ? 1 : -1;
     const heavy = attacker.attackIsHeavy;
     const stamCost = heavy ? C.BLOCK_HIT_STAMINA_HEAVY : C.BLOCK_HIT_STAMINA_LIGHT;
-    const { result } = defender.takeHit({
+    const hpBefore = defender.hp;
+    const { result, dealt } = defender.takeHit({
       damage: ad.damage,
       hitstun: ad.hitstun,
       knockback: ad.knockback,
@@ -109,6 +111,11 @@ export class Match {
       this.lastEvents.push(`parry_p${defender.index}`);
     } else if (result !== "none") {
       this.lastEvents.push(`${result}_p${defender.index}`);
+      if (dealt > 0) {
+        this.lastEvents.push(
+          `dmg_p${defender.index}:${dealt.toFixed(0)}:${hpBefore - defender.hp > 0 ? "1" : "0"}`
+        );
+      }
     }
   }
 
