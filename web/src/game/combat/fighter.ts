@@ -1,26 +1,28 @@
 import { Action } from "./actions";
 import * as C from "./constants";
-import type { AttackDef } from "./constants";
 import type { CharacterDef } from "../data/characters";
+import type { MoveDef, WeaponDef } from "../data/weapons";
+import { totalMoveFrames } from "../data/weapons";
 
 export enum FighterState {
   IDLE = 0,
   WALK = 1,
   JUMP = 2,
-  LIGHT = 3,
-  HEAVY = 4,
-  BLOCK = 5,
-  HITSTUN = 6,
-  KO = 7,
-  BLOCKSTUN = 8,
-  GUARD_BREAK = 9,
-  PARRY = 10,
-  PARRY_WHIFF = 11,
+  ATTACK = 3,
+  BLOCK = 4,
+  HITSTUN = 5,
+  KO = 6,
+  BLOCKSTUN = 7,
+  GUARD_BREAK = 8,
+  PARRY = 9,
+  PARRY_WHIFF = 10,
 }
+
+export type AttackSlot = "light" | "light2" | "heavy" | "special";
 
 export type Rect = { left: number; top: number; right: number; bottom: number };
 
-function scaleAtk(base: AttackDef, char: CharacterDef): AttackDef {
+function scaleMove(base: MoveDef, char: CharacterDef): MoveDef {
   return {
     ...base,
     damage: base.damage * char.stats.damage,
@@ -33,6 +35,7 @@ function scaleAtk(base: AttackDef, char: CharacterDef): AttackDef {
 export class Fighter {
   index: number;
   characterId: string;
+  weaponId: string;
   x: number;
   y = C.GROUND_Y;
   vx = 0;
@@ -45,7 +48,8 @@ export class Fighter {
   state: FighterState = FighterState.IDLE;
   stateTimer = 0;
   attackTimer = 0;
-  attackDef: AttackDef | null = null;
+  attackMove: MoveDef | null = null;
+  attackSlot: AttackSlot | null = null;
   hitConnected = false;
   onGround = true;
   lastAction: Action = Action.IDLE;
@@ -56,24 +60,42 @@ export class Fighter {
   justParryWhiffed = false;
   parryConnected = false;
   lastParryDamageTaken = 0;
+  /** True once light recovery has started — enables light2 cancel */
+  lightCancelArmed = false;
 
-  // character-scaled kits
-  private light: AttackDef;
-  private heavy: AttackDef;
+  private kit: {
+    light: MoveDef;
+    light2?: MoveDef;
+    heavy: MoveDef;
+    special: MoveDef;
+  };
   private walkSpeed: number;
   private jumpVel: number;
+  readonly weapon: WeaponDef;
 
-  constructor(index: number, x: number, facing: number, character: CharacterDef) {
+  constructor(
+    index: number,
+    x: number,
+    facing: number,
+    character: CharacterDef,
+    weapon: WeaponDef
+  ) {
     this.index = index;
     this.characterId = character.id;
+    this.weaponId = weapon.id;
+    this.weapon = weapon;
     this.x = x;
     this.facing = facing;
     this.maxHp = C.MAX_HP * character.stats.hp;
     this.hp = this.maxHp;
     this.maxStamina = C.MAX_STAMINA * character.stats.stamina;
     this.stamina = this.maxStamina;
-    this.light = scaleAtk(C.LIGHT, character);
-    this.heavy = scaleAtk(C.HEAVY, character);
+    this.kit = {
+      light: scaleMove(weapon.light, character),
+      light2: weapon.light2 ? scaleMove(weapon.light2, character) : undefined,
+      heavy: scaleMove(weapon.heavy, character),
+      special: scaleMove(weapon.special, character),
+    };
     this.walkSpeed = C.WALK_SPEED * character.stats.speed;
     this.jumpVel = C.JUMP_VELOCITY * character.stats.jump;
   }
@@ -84,8 +106,7 @@ export class Fighter {
 
   get locked() {
     return (
-      this.state === FighterState.LIGHT ||
-      this.state === FighterState.HEAVY ||
+      this.state === FighterState.ATTACK ||
       this.state === FighterState.HITSTUN ||
       this.state === FighterState.BLOCKSTUN ||
       this.state === FighterState.GUARD_BREAK ||
@@ -96,7 +117,7 @@ export class Fighter {
   }
 
   get isAttacking() {
-    return this.state === FighterState.LIGHT || this.state === FighterState.HEAVY;
+    return this.state === FighterState.ATTACK;
   }
 
   get isShielding() {
@@ -112,9 +133,25 @@ export class Fighter {
   }
 
   get attackActive() {
-    if (!this.isAttacking || !this.attackDef) return false;
-    const ad = this.attackDef;
+    if (!this.isAttacking || !this.attackMove) return false;
+    const ad = this.attackMove;
     return this.attackTimer >= ad.startup && this.attackTimer < ad.startup + ad.active;
+  }
+
+  /** True if current attack counts as "heavy-ish" for block stamina / parry bonus */
+  get attackIsHeavy() {
+    return this.attackSlot === "heavy" || this.attackSlot === "special";
+  }
+
+  get inLightRecoveryCancel() {
+    if (!this.isAttacking || this.attackSlot !== "light" || !this.attackMove) return false;
+    const ad = this.attackMove;
+    const recoveryStart = ad.startup + ad.active;
+    return (
+      this.attackTimer >= recoveryStart &&
+      this.attackTimer < recoveryStart + C.LIGHT_CANCEL_WINDOW &&
+      !!this.kit.light2
+    );
   }
 
   bodyRect(): Rect {
@@ -139,8 +176,8 @@ export class Fighter {
   }
 
   hitboxRect(): Rect | null {
-    if (!this.attackActive || !this.attackDef) return null;
-    const ad = this.attackDef;
+    if (!this.attackActive || !this.attackMove) return null;
+    const ad = this.attackMove;
     const left = this.facing >= 0 ? this.x : this.x - ad.range;
     const right = this.facing >= 0 ? this.x + ad.range : this.x;
     const top = this.y + ad.hitboxYOffset - ad.hitboxH * 0.5;
@@ -163,6 +200,7 @@ export class Fighter {
     this.justParryWhiffed = false;
 
     if (this.state === FighterState.KO) return;
+
     if (
       this.state === FighterState.HITSTUN ||
       this.state === FighterState.BLOCKSTUN ||
@@ -172,6 +210,21 @@ export class Fighter {
     ) {
       return;
     }
+
+    // Light chain cancel during light recovery
+    if (
+      this.isAttacking &&
+      action === Action.LIGHT &&
+      this.inLightRecoveryCancel &&
+      this.kit.light2
+    ) {
+      if (this.canAfford(this.kit.light2.staminaCost)) {
+        this.spendStamina(this.kit.light2.staminaCost);
+        this.startAttack(this.kit.light2, "light2");
+      }
+      return;
+    }
+
     if (this.isAttacking) return;
 
     if (action === Action.BLOCK && this.onGround && this.stamina > 0) {
@@ -192,22 +245,29 @@ export class Fighter {
 
     if (this.state === FighterState.BLOCK) {
       this.releaseBlock(true);
-      // releaseBlock may enter PARRY_WHIFF recovery
       if (this.locked) return;
     }
 
     if (action === Action.LIGHT && this.onGround) {
-      if (this.canAfford(this.light.staminaCost)) {
-        this.spendStamina(this.light.staminaCost);
-        this.startAttack(this.light, FighterState.LIGHT);
+      if (this.canAfford(this.kit.light.staminaCost)) {
+        this.spendStamina(this.kit.light.staminaCost);
+        this.startAttack(this.kit.light, "light");
       }
       return;
     }
 
     if (action === Action.HEAVY && this.onGround) {
-      if (this.canAfford(this.heavy.staminaCost)) {
-        this.spendStamina(this.heavy.staminaCost);
-        this.startAttack(this.heavy, FighterState.HEAVY);
+      if (this.canAfford(this.kit.heavy.staminaCost)) {
+        this.spendStamina(this.kit.heavy.staminaCost);
+        this.startAttack(this.kit.heavy, "heavy");
+      }
+      return;
+    }
+
+    if (action === Action.SPECIAL && this.onGround) {
+      if (this.canAfford(this.kit.special.staminaCost)) {
+        this.spendStamina(this.kit.special.staminaCost);
+        this.startAttack(this.kit.special, "special");
       }
       return;
     }
@@ -267,13 +327,15 @@ export class Fighter {
     this.parryConnected = false;
   }
 
-  private startAttack(attack: AttackDef, state: FighterState) {
-    this.state = state;
-    this.attackDef = attack;
+  private startAttack(move: MoveDef, slot: AttackSlot) {
+    this.state = FighterState.ATTACK;
+    this.attackMove = move;
+    this.attackSlot = slot;
     this.attackTimer = 0;
     this.hitConnected = false;
     this.vx = 0;
     this.blockHoldFrames = 0;
+    this.lightCancelArmed = slot === "light";
   }
 
   tickTimersAndPhysics() {
@@ -303,15 +365,22 @@ export class Fighter {
       return;
     }
 
-    if (this.isAttacking && this.attackDef) {
+    if (this.isAttacking && this.attackMove) {
       this.attackTimer += 1;
-      const total =
-        this.attackDef.startup + this.attackDef.active + this.attackDef.recovery;
-      if (this.attackTimer >= total) {
+      // Lunge during startup + early active
+      if (
+        this.attackMove.lunge &&
+        this.attackTimer <= this.attackMove.startup + 2
+      ) {
+        this.x += this.facing * (this.attackMove.lunge / (this.attackMove.startup + 2));
+      }
+      if (this.attackTimer >= totalMoveFrames(this.attackMove)) {
         this.state = this.onGround ? FighterState.IDLE : FighterState.JUMP;
-        this.attackDef = null;
+        this.attackMove = null;
+        this.attackSlot = null;
         this.attackTimer = 0;
         this.hitConnected = false;
+        this.lightCancelArmed = false;
       }
       this.integrate();
       return;
@@ -328,8 +397,7 @@ export class Fighter {
       return;
     }
     if (
-      this.state === FighterState.LIGHT ||
-      this.state === FighterState.HEAVY ||
+      this.state === FighterState.ATTACK ||
       this.state === FighterState.BLOCK ||
       this.state === FighterState.BLOCKSTUN ||
       this.state === FighterState.GUARD_BREAK ||
@@ -387,7 +455,8 @@ export class Fighter {
       this.state = FighterState.PARRY;
       this.stateTimer = C.PARRY_FLASH_FRAMES;
       this.blockHoldFrames = 0;
-      this.attackDef = null;
+      this.attackMove = null;
+      this.attackSlot = null;
       this.attackTimer = 0;
       this.stamina = Math.min(this.maxStamina, this.stamina + C.PARRY_STAMINA_REFUND);
       this.vx = 0;
@@ -401,9 +470,7 @@ export class Fighter {
         this.justGuardBroke = true;
         const dealt = opts.damage;
         this.hp = Math.max(0, this.hp - dealt);
-        this.blockHoldFrames = 0;
-        this.attackDef = null;
-        this.attackTimer = 0;
+        this.clearAttack();
         if (this.hp <= 0) {
           this.ko();
           this.vx = opts.direction * opts.knockback;
@@ -426,9 +493,7 @@ export class Fighter {
 
     const dealt = opts.damage;
     this.hp = Math.max(0, this.hp - dealt);
-    this.blockHoldFrames = 0;
-    this.attackDef = null;
-    this.attackTimer = 0;
+    this.clearAttack();
     if (this.hp <= 0) {
       this.ko();
       this.vx = opts.direction * opts.knockback;
@@ -445,10 +510,8 @@ export class Fighter {
     const dmg =
       C.PARRY_COUNTER_DAMAGE + (isHeavy ? C.PARRY_COUNTER_HEAVY_BONUS : 0);
     this.hp = Math.max(0, this.hp - dmg);
-    this.attackDef = null;
-    this.attackTimer = 0;
+    this.clearAttack();
     this.hitConnected = true;
-    this.blockHoldFrames = 0;
     this.vx = direction * C.PARRY_COUNTER_KNOCKBACK;
     this.lastParryDamageTaken = dmg;
     if (this.hp <= 0) {
@@ -460,12 +523,19 @@ export class Fighter {
     return dmg;
   }
 
+  private clearAttack() {
+    this.attackMove = null;
+    this.attackSlot = null;
+    this.attackTimer = 0;
+    this.blockHoldFrames = 0;
+    this.lightCancelArmed = false;
+  }
+
   private ko() {
     this.hp = 0;
     this.state = FighterState.KO;
     this.stateTimer = 0;
-    this.attackDef = null;
-    this.blockHoldFrames = 0;
+    this.clearAttack();
     this.parryConnected = false;
   }
 }

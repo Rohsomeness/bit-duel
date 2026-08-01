@@ -15,6 +15,7 @@ const config: Phaser.Types.Core.GameConfig = {
   pixelArt: true,
   antialias: false,
   roundPixels: true,
+  banner: false,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -22,7 +23,11 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, TitleScene, CharacterSelectScene, FightScene, ResultScene],
   fps: {
     target: 60,
-    forceSetTimeOut: true,
+    // forceSetTimeOut caused extra lag — use rAF
+  },
+  render: {
+    powerPreference: "high-performance",
+    batchSize: 4096,
   },
   input: {
     keyboard: true,

@@ -1,19 +1,32 @@
 import Phaser from "phaser";
 import * as C from "../combat/constants";
-import { CHARACTERS, OPPONENTS, type CharacterDef, type OpponentKind } from "../data/characters";
+import { CHARACTERS, OPPONENTS, type OpponentKind } from "../data/characters";
+import { WEAPONS } from "../data/weapons";
 import { REG, type GameSelection } from "../registry";
+
+type Panel = "player" | "pWeapon" | "rival" | "rWeapon" | "ai";
 
 export class CharacterSelectScene extends Phaser.Scene {
   private pIndex = 0;
   private rIndex = 1;
+  private pwIndex = 0;
+  private rwIndex = 2; // sword default for rival
   private aiIndex = 0;
-  private focus: "player" | "rival" | "ai" = "player";
+  private focus: Panel = "player";
 
-  private cardPlayer!: Phaser.GameObjects.Container;
-  private cardRival!: Phaser.GameObjects.Container;
+  private pPortrait!: Phaser.GameObjects.Image;
+  private rPortrait!: Phaser.GameObjects.Image;
+  private pName!: Phaser.GameObjects.Text;
+  private rName!: Phaser.GameObjects.Text;
+  private pWep!: Phaser.GameObjects.Text;
+  private rWep!: Phaser.GameObjects.Text;
+  private pWepIcon!: Phaser.GameObjects.Image;
+  private rWepIcon!: Phaser.GameObjects.Image;
   private aiLabel!: Phaser.GameObjects.Text;
   private hint!: Phaser.GameObjects.Text;
-  private confirmFlash?: Phaser.GameObjects.Text;
+  private focusLabel!: Phaser.GameObjects.Text;
+  private pFrame!: Phaser.GameObjects.Rectangle;
+  private rFrame!: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super("CharacterSelect");
@@ -23,9 +36,10 @@ export class CharacterSelectScene extends Phaser.Scene {
     const w = C.STAGE_WIDTH;
     const h = C.STAGE_HEIGHT;
 
-    this.add.tileSprite(w / 2, h / 2, w, h, "starfield");
+    this.add.image(w / 2, h / 2, "starfield").setDisplaySize(w, h).setAlpha(0.85);
+
     this.add
-      .text(w / 2, 28, "SELECT YOUR SIGNAL", {
+      .text(w / 2, 22, "ARMORY · SELECT", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "14px",
         color: "#e8e4ff",
@@ -33,30 +47,86 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(w / 2, 52, "← → change   ·   TAB switch panel   ·   ENTER fight", {
+      .text(w / 2, 46, "← → change   TAB panel   ENTER fight", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "7px",
         color: "#7a7599",
       })
       .setOrigin(0.5);
 
-    this.cardPlayer = this.buildCard(200, 230, true);
-    this.cardRival = this.buildCard(600, 230, false);
+    // Player card
+    this.pFrame = this.add.rectangle(190, 200, 240, 250, 0x120f1c, 0.95).setStrokeStyle(2, 0x2a2540);
+    this.add
+      .text(190, 90, "YOU", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "8px",
+        color: "#6ef3ff",
+      })
+      .setOrigin(0.5);
+    this.pPortrait = this.add.image(190, 160, "char_ion_portrait").setScale(1.8);
+    this.pName = this.add
+      .text(190, 240, "ION", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "11px",
+        color: "#6ef3ff",
+      })
+      .setOrigin(0.5);
+    this.pWepIcon = this.add.image(150, 280, "wpn_fists_icon").setScale(1.2);
+    this.pWep = this.add
+      .text(210, 280, "FISTS", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "8px",
+        color: "#c4c0e0",
+      })
+      .setOrigin(0, 0.5);
+
+    // Rival card
+    this.rFrame = this.add.rectangle(610, 200, 240, 250, 0x120f1c, 0.95).setStrokeStyle(2, 0x2a2540);
+    this.add
+      .text(610, 90, "RIVAL", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "8px",
+        color: "#ff6b9d",
+      })
+      .setOrigin(0.5);
+    this.rPortrait = this.add.image(610, 160, "char_ember_portrait").setScale(1.8);
+    this.rName = this.add
+      .text(610, 240, "EMBER", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "11px",
+        color: "#ff7a45",
+      })
+      .setOrigin(0.5);
+    this.rWepIcon = this.add.image(570, 280, "wpn_sword_icon").setScale(1.2);
+    this.rWep = this.add
+      .text(630, 280, "SWORD", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "8px",
+        color: "#c4c0e0",
+      })
+      .setOrigin(0, 0.5);
 
     this.add
-      .text(w / 2, 200, "VS", {
+      .text(w / 2, 190, "VS", {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "18px",
+        fontSize: "16px",
         color: "#ff6b9d",
       })
       .setOrigin(0.5);
 
-    this.aiLabel = this.add
-      .text(w / 2, 360, "", {
+    this.focusLabel = this.add
+      .text(w / 2, 340, "", {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "10px",
+        fontSize: "9px",
+        color: "#ffe66d",
+      })
+      .setOrigin(0.5);
+
+    this.aiLabel = this.add
+      .text(w / 2, 365, "", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "9px",
         color: "#6ef3ff",
-        align: "center",
       })
       .setOrigin(0.5);
 
@@ -66,7 +136,15 @@ export class CharacterSelectScene extends Phaser.Scene {
         fontSize: "7px",
         color: "#7a7599",
         align: "center",
-        wordWrap: { width: 600 },
+        wordWrap: { width: 640 },
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(w / 2, 430, "J light chain  ·  K heavy  ·  I special  ·  L shield", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "6px",
+        color: "#4a4660",
       })
       .setOrigin(0.5);
 
@@ -79,7 +157,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     kb.on("keydown-D", () => this.nudge(1));
     kb.on("keydown-TAB", (e: KeyboardEvent) => {
       e.preventDefault();
-      this.cycleFocus();
+      this.cycleFocus(1);
     });
     kb.on("keydown-UP", () => this.cycleFocus(-1));
     kb.on("keydown-DOWN", () => this.cycleFocus(1));
@@ -87,74 +165,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     kb.on("keydown-SPACE", () => this.confirm());
   }
 
-  private buildCard(x: number, y: number, isPlayer: boolean) {
-    const c = this.add.container(x, y);
-    const frame = this.add.rectangle(0, 0, 220, 260, 0x120f1c, 0.95).setStrokeStyle(2, 0x2a2540);
-    const portrait = this.add.image(0, -40, "char_ion_portrait").setScale(2);
-    const name = this.add
-      .text(0, 50, "ION", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "12px",
-        color: "#6ef3ff",
-      })
-      .setOrigin(0.5);
-    const title = this.add
-      .text(0, 72, "title", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "7px",
-        color: "#7a7599",
-      })
-      .setOrigin(0.5);
-    const stats = this.add
-      .text(0, 100, "", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "6px",
-        color: "#c4c0e0",
-        align: "center",
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5);
-    const tag = this.add
-      .text(0, -118, isPlayer ? "YOU" : "RIVAL", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "8px",
-        color: isPlayer ? "#6ef3ff" : "#ff6b9d",
-      })
-      .setOrigin(0.5);
+  private panels: Panel[] = ["player", "pWeapon", "rival", "rWeapon", "ai"];
 
-    c.add([frame, portrait, name, title, stats, tag]);
-    (c as unknown as { frame: Phaser.GameObjects.Rectangle }).frame = frame;
-    (c as unknown as { portrait: Phaser.GameObjects.Image }).portrait = portrait;
-    (c as unknown as { name: Phaser.GameObjects.Text }).name = name;
-    (c as unknown as { title: Phaser.GameObjects.Text }).title = title;
-    (c as unknown as { stats: Phaser.GameObjects.Text }).stats = stats;
-    return c;
-  }
-
-  private fillCard(card: Phaser.GameObjects.Container, char: CharacterDef, active: boolean) {
-    const frame = (card as unknown as { frame: Phaser.GameObjects.Rectangle }).frame;
-    const portrait = (card as unknown as { portrait: Phaser.GameObjects.Image }).portrait;
-    const name = (card as unknown as { name: Phaser.GameObjects.Text }).name;
-    const title = (card as unknown as { title: Phaser.GameObjects.Text }).title;
-    const stats = (card as unknown as { stats: Phaser.GameObjects.Text }).stats;
-
-    portrait.setTexture(`char_${char.id}_portrait`);
-    name.setText(char.name).setColor(char.palette.body);
-    title.setText(char.title);
-    stats.setText(
-      [
-        `HP ${bar(char.stats.hp)}`,
-        `STA ${bar(char.stats.stamina)}`,
-        `SPD ${bar(char.stats.speed)}`,
-        `DMG ${bar(char.stats.damage)}`,
-      ].join("\n")
-    );
-    frame.setStrokeStyle(3, active ? Phaser.Display.Color.HexStringToColor(char.palette.body).color : 0x2a2540);
-    this.tweens.add({
-      targets: card,
-      scale: active ? 1.04 : 1,
-      duration: 120,
-    });
+  private cycleFocus(dir: number) {
+    const i = this.panels.indexOf(this.focus);
+    this.focus = this.panels[(i + dir + this.panels.length) % this.panels.length];
+    this.refresh();
   }
 
   private nudge(dir: number) {
@@ -162,38 +178,64 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.pIndex = (this.pIndex + dir + CHARACTERS.length) % CHARACTERS.length;
     } else if (this.focus === "rival") {
       this.rIndex = (this.rIndex + dir + CHARACTERS.length) % CHARACTERS.length;
+    } else if (this.focus === "pWeapon") {
+      this.pwIndex = (this.pwIndex + dir + WEAPONS.length) % WEAPONS.length;
+    } else if (this.focus === "rWeapon") {
+      this.rwIndex = (this.rwIndex + dir + WEAPONS.length) % WEAPONS.length;
     } else {
       this.aiIndex = (this.aiIndex + dir + OPPONENTS.length) % OPPONENTS.length;
     }
     this.refresh();
   }
 
-  private cycleFocus(dir = 1) {
-    const order: Array<"player" | "rival" | "ai"> = ["player", "rival", "ai"];
-    const i = order.indexOf(this.focus);
-    this.focus = order[(i + dir + order.length) % order.length];
-    this.refresh();
-  }
-
   private refresh() {
     const p = CHARACTERS[this.pIndex];
     const r = CHARACTERS[this.rIndex];
+    const pw = WEAPONS[this.pwIndex];
+    const rw = WEAPONS[this.rwIndex];
     const ai = OPPONENTS[this.aiIndex];
-    this.fillCard(this.cardPlayer, p, this.focus === "player");
-    this.fillCard(this.cardRival, r, this.focus === "rival");
 
-    const aiActive = this.focus === "ai";
-    this.aiLabel.setText(
-      `${aiActive ? "▸ " : ""}CPU STYLE: ${ai.label}${aiActive ? " ◂" : ""}`
+    this.pPortrait.setTexture(`char_${p.id}_portrait`);
+    this.rPortrait.setTexture(`char_${r.id}_portrait`);
+    this.pName.setText(p.name).setColor(p.palette.body);
+    this.rName.setText(r.name).setColor(r.palette.body);
+    this.pWep.setText(pw.name);
+    this.rWep.setText(rw.name);
+    this.pWepIcon.setTexture(`wpn_${pw.id}_icon`);
+    this.rWepIcon.setTexture(`wpn_${rw.id}_icon`);
+
+    const focusColor = (panel: Panel, activeHex: number, idle = 0x2a2540) =>
+      this.focus === panel ? activeHex : idle;
+
+    this.pFrame.setStrokeStyle(
+      3,
+      focusColor("player", 0x6ef3ff) === 0x6ef3ff || this.focus === "pWeapon"
+        ? 0x6ef3ff
+        : 0x2a2540
     );
-    this.aiLabel.setColor(aiActive ? "#ffe66d" : "#6ef3ff");
+    this.rFrame.setStrokeStyle(
+      3,
+      this.focus === "rival" || this.focus === "rWeapon" ? 0xff6b9d : 0x2a2540
+    );
 
-    const blurb =
-      this.focus === "player"
-        ? p.blurb
-        : this.focus === "rival"
-          ? r.blurb
-          : ai.blurb;
+    const labels: Record<Panel, string> = {
+      player: "▸ FIGHTER (YOU)",
+      pWeapon: "▸ WEAPON (YOU)",
+      rival: "▸ FIGHTER (RIVAL)",
+      rWeapon: "▸ WEAPON (RIVAL)",
+      ai: "▸ CPU STYLE",
+    };
+    this.focusLabel.setText(labels[this.focus]);
+
+    this.aiLabel.setText(`CPU: ${ai.label}`);
+    this.aiLabel.setColor(this.focus === "ai" ? "#ffe66d" : "#6ef3ff");
+
+    let blurb = "";
+    if (this.focus === "player") blurb = p.blurb;
+    else if (this.focus === "rival") blurb = r.blurb;
+    else if (this.focus === "pWeapon") blurb = `${pw.title} — ${pw.blurb}`;
+    else if (this.focus === "rWeapon") blurb = `${rw.title} — ${rw.blurb}`;
+    else blurb = ai.blurb;
     this.hint.setText(blurb);
   }
 
@@ -201,27 +243,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     const selection: GameSelection = {
       player: CHARACTERS[this.pIndex],
       rival: CHARACTERS[this.rIndex],
+      playerWeapon: WEAPONS[this.pwIndex],
+      rivalWeapon: WEAPONS[this.rwIndex],
       opponentAI: OPPONENTS[this.aiIndex].id as OpponentKind,
     };
     this.registry.set(REG.selection, selection);
-
-    this.confirmFlash = this.add
-      .text(C.STAGE_WIDTH / 2, C.STAGE_HEIGHT / 2, "ENGAGE", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "28px",
-        color: "#ffe66d",
-      })
-      .setOrigin(0.5)
-      .setDepth(20);
-    this.cameras.main.flash(200, 110, 243, 255);
-    this.time.delayedCall(420, () => {
-      this.scene.start("Fight");
-    });
+    this.cameras.main.flash(160, 110, 243, 255);
+    this.time.delayedCall(280, () => this.scene.start("Fight"));
   }
-}
-
-function bar(mult: number) {
-  // 0.85..1.22 → 1..5 blocks
-  const n = Math.max(1, Math.min(5, Math.round((mult - 0.8) / 0.1)));
-  return "■".repeat(n) + "□".repeat(5 - n);
 }

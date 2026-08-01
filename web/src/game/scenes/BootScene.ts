@@ -1,6 +1,11 @@
 import Phaser from "phaser";
 import { CHARACTERS } from "../data/characters";
-import { bakeCharacterTextures, bakeStageTextures, bakeUiTextures } from "../render/pixelArt";
+import {
+  bakeCharacterTextures,
+  bakeStageTextures,
+  bakeUiTextures,
+  bakeWeaponTextures,
+} from "../render/pixelArt";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -10,13 +15,12 @@ export class BootScene extends Phaser.Scene {
   create() {
     bakeUiTextures(this);
     bakeStageTextures(this);
+    bakeWeaponTextures(this);
     for (const c of CHARACTERS) {
       bakeCharacterTextures(this, c);
     }
 
-    const boot = document.getElementById("boot");
-    if (boot) boot.classList.add("hide");
-
+    document.getElementById("boot")?.classList.add("hide");
     this.scene.start("Title");
   }
 }

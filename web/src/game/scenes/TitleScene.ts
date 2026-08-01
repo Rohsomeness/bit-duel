@@ -10,22 +10,20 @@ export class TitleScene extends Phaser.Scene {
     const w = C.STAGE_WIDTH;
     const h = C.STAGE_HEIGHT;
 
-    // backdrop
-    this.add.tileSprite(w / 2, h / 2, w, h, "starfield").setAlpha(0.9);
-    const glow = this.add.rectangle(w / 2, h * 0.42, w * 0.7, 120, 0x6ef3ff, 0.06);
+    this.add.image(w / 2, h / 2, "starfield").setDisplaySize(w, h).setAlpha(0.9);
+    this.add.rectangle(w / 2, h * 0.4, w * 0.65, 100, 0x6ef3ff, 0.05);
 
-    // title block
     const title = this.add
-      .text(w / 2, 120, "BIT·DUEL", {
+      .text(w / 2, 110, "BIT·DUEL", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "36px",
         color: "#6ef3ff",
       })
       .setOrigin(0.5);
-    title.setShadow(0, 0, "#6ef3ff", 16, true, true);
+    title.setShadow(0, 0, "#6ef3ff", 14, true, true);
 
     this.add
-      .text(w / 2, 168, "ARENA PROTOCOL", {
+      .text(w / 2, 158, "WEAPON ARENA", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "10px",
         color: "#ff6b9d",
@@ -33,18 +31,28 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(w / 2, 220, "a pixel arena of stamina, shields & perfect parries", {
+      .text(w / 2, 200, "Shadow of the neon pit — fists, steel, staff & chain", {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "8px",
+        fontSize: "7px",
         color: "#7a7599",
         align: "center",
-        wordWrap: { width: 520 },
+        wordWrap: { width: 560 },
       })
       .setOrigin(0.5);
 
-    // decorative fighters
-    this.add.image(180, 320, "char_ion_idle").setScale(2).setFlipX(false);
-    this.add.image(620, 320, "char_ember_idle").setScale(2).setFlipX(true);
+    this.add.image(200, 300, "char_ion_idle").setScale(2);
+    this.add.image(250, 290, "wpn_sword_idle").setScale(2);
+    this.add.image(600, 300, "char_ember_idle").setScale(2).setFlipX(true);
+    this.add.image(550, 290, "wpn_nunchaku_idle").setScale(2).setFlipX(true);
+
+    const weapons = "FISTS · NUNCHAKU · SWORD · SPEAR · KNIVES · STAFF";
+    this.add
+      .text(w / 2, 350, weapons, {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "6px",
+        color: "#5a5670",
+      })
+      .setOrigin(0.5);
 
     const prompt = this.add
       .text(w / 2, 390, "PRESS  ENTER  /  SPACE", {
@@ -56,21 +64,14 @@ export class TitleScene extends Phaser.Scene {
 
     this.tweens.add({
       targets: prompt,
-      alpha: 0.25,
-      duration: 650,
-      yoyo: true,
-      repeat: -1,
-    });
-    this.tweens.add({
-      targets: glow,
-      alpha: 0.12,
-      duration: 1400,
+      alpha: 0.3,
+      duration: 700,
       yoyo: true,
       repeat: -1,
     });
 
     this.add
-      .text(w / 2, 430, "J light  ·  K heavy  ·  L shield/parry  ·  move A/D", {
+      .text(w / 2, 430, "J light  K heavy  I special  L shield/parry", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "7px",
         color: "#4a4660",
@@ -83,7 +84,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private go() {
-    this.cameras.main.fadeOut(280, 7, 6, 14);
+    this.cameras.main.fadeOut(220, 7, 6, 14);
     this.cameras.main.once("camerafadeoutcomplete", () => {
       this.scene.start("CharacterSelect");
     });

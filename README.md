@@ -40,13 +40,32 @@ Deploy: push `web/` and enable the included workflow [`.github/workflows/deploy-
 | **ROOT** | Tank + stamina well |
 | **ECHO** | Stylish mid-range all-rounder |
 
-## Combat (shared design)
+## Weapons (Shadow Fight–style kits)
 
-- **Stamina** — walking, jumping, attacking, shielding  
-- **Shield** — hold L (chip + STA cost)  
-- **Parry** — tap L in the gold window as a hit lands → **counter damage**  
-- **Whiff** — tap-and-release in the window with no hit → long punish recovery  
-- **Guard break** — 0 STA on a blocked hit  
+Each weapon has **light**, optional **light2 chain**, **heavy**, and **special**:
+
+| Weapon | Reach | Identity |
+|--------|-------|----------|
+| **Fists** | Short | Fast jabs, flurry |
+| **Nunchaku** | Mid | Whips + cyclone |
+| **Sword** | Mid | Cuts, cleave, lunge |
+| **Spear** | Long | Pokes, impale |
+| **Knives** | Short | Rapid shred |
+| **Staff** | Mid | Sweep control |
+
+## Combat
+
+- **Stamina** — walk, jump, attacks, shield  
+- **J** light (+ chain) · **K** heavy · **I** special · **L** shield/parry  
+- **Parry** — counter damage · **Whiff** — punish recovery · **Guard break** on 0 STA  
+
+## Tests
+
+```bash
+cd web && npm test    # 12 combat tests
+cd .. && pytest -q    # python prototype (older kit)
+```
+
 
 ## Python stack (RL / headless)
 

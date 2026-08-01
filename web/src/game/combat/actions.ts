@@ -6,9 +6,11 @@ export enum Action {
   LIGHT = 4,
   HEAVY = 5,
   BLOCK = 6,
+  /** Weapon special (I / U) */
+  SPECIAL = 7,
 }
 
-export const NUM_ACTIONS = 7;
+export const NUM_ACTIONS = 8;
 
 export const ACTION_NAMES: Record<Action, string> = {
   [Action.IDLE]: "idle",
@@ -18,4 +20,5 @@ export const ACTION_NAMES: Record<Action, string> = {
   [Action.LIGHT]: "light",
   [Action.HEAVY]: "heavy",
   [Action.BLOCK]: "block",
+  [Action.SPECIAL]: "special",
 };

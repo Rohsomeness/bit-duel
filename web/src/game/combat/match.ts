@@ -2,6 +2,7 @@ import { Action } from "./actions";
 import * as C from "./constants";
 import { Fighter, rectsOverlap } from "./fighter";
 import type { CharacterDef } from "../data/characters";
+import type { WeaponDef } from "../data/weapons";
 
 export type MatchResult = {
   winner: number | null;
@@ -17,11 +18,17 @@ export class Match {
   maxFrames: number;
   lastEvents: string[] = [];
 
-  constructor(p0: CharacterDef, p1: CharacterDef, maxFrames = C.MAX_FRAMES) {
+  constructor(
+    p0: CharacterDef,
+    w0: WeaponDef,
+    p1: CharacterDef,
+    w1: WeaponDef,
+    maxFrames = C.MAX_FRAMES
+  ) {
     this.maxFrames = maxFrames;
     this.fighters = [
-      new Fighter(0, C.STAGE_WIDTH * 0.28, 1, p0),
-      new Fighter(1, C.STAGE_WIDTH * 0.72, -1, p1),
+      new Fighter(0, C.STAGE_WIDTH * 0.28, 1, p0, w0),
+      new Fighter(1, C.STAGE_WIDTH * 0.72, -1, p1, w1),
     ];
     this.faceEachOther();
   }
@@ -83,11 +90,10 @@ export class Match {
     const hb = attacker.hitboxRect();
     if (!hb || !rectsOverlap(hb, defender.bodyRect())) return;
     attacker.hitConnected = true;
-    const ad = attacker.attackDef!;
+    const ad = attacker.attackMove!;
     const direction = attacker.x <= defender.x ? 1 : -1;
-    const stamCost = ad.isHeavy
-      ? C.BLOCK_HIT_STAMINA_HEAVY
-      : C.BLOCK_HIT_STAMINA_LIGHT;
+    const heavy = attacker.attackIsHeavy;
+    const stamCost = heavy ? C.BLOCK_HIT_STAMINA_HEAVY : C.BLOCK_HIT_STAMINA_LIGHT;
     const { result } = defender.takeHit({
       damage: ad.damage,
       hitstun: ad.hitstun,
@@ -99,7 +105,7 @@ export class Match {
       attackBlockstun: ad.blockstun,
     });
     if (result === "parry") {
-      attacker.applyParryPunish(-direction, ad.isHeavy);
+      attacker.applyParryPunish(-direction, heavy);
       this.lastEvents.push(`parry_p${defender.index}`);
     } else if (result !== "none") {
       this.lastEvents.push(`${result}_p${defender.index}`);

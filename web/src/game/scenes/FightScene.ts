@@ -12,6 +12,8 @@ export class FightScene extends Phaser.Scene {
 
   private spr0!: Phaser.GameObjects.Image;
   private spr1!: Phaser.GameObjects.Image;
+  private wpn0!: Phaser.GameObjects.Image;
+  private wpn1!: Phaser.GameObjects.Image;
   private shield0!: Phaser.GameObjects.Rectangle;
   private shield1!: Phaser.GameObjects.Rectangle;
 
@@ -21,30 +23,15 @@ export class FightScene extends Phaser.Scene {
   private sta1!: Phaser.GameObjects.Rectangle;
   private timerText!: Phaser.GameObjects.Text;
   private callout!: Phaser.GameObjects.Text;
-  private names!: Phaser.GameObjects.Text;
+  private moveLabel!: Phaser.GameObjects.Text;
 
   private ended = false;
-  private keys!: {
-    left: Phaser.Input.Keyboard.Key;
-    right: Phaser.Input.Keyboard.Key;
-    up: Phaser.Input.Keyboard.Key;
-    space: Phaser.Input.Keyboard.Key;
-    w: Phaser.Input.Keyboard.Key;
-    a: Phaser.Input.Keyboard.Key;
-    d: Phaser.Input.Keyboard.Key;
-    j: Phaser.Input.Keyboard.Key;
-    k: Phaser.Input.Keyboard.Key;
-    z: Phaser.Input.Keyboard.Key;
-    x: Phaser.Input.Keyboard.Key;
-    l: Phaser.Input.Keyboard.Key;
-    c: Phaser.Input.Keyboard.Key;
-    shift: Phaser.Input.Keyboard.Key;
-  };
-
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private walkFrame = 0;
   private walkTick = 0;
   private accum = 0;
   private readonly stepMs = 1000 / C.FPS;
+  private lastCallout = "";
 
   constructor() {
     super("Fight");
@@ -54,41 +41,38 @@ export class FightScene extends Phaser.Scene {
     this.ended = false;
     this.accum = 0;
     this.selection = this.registry.get(REG.selection) as GameSelection;
-    if (!this.selection) {
+    if (!this.selection?.playerWeapon) {
       this.scene.start("CharacterSelect");
       return;
     }
 
-    const { player, rival, opponentAI } = this.selection;
-    this.match = new Match(player, rival);
-    this.ai = makeAI(opponentAI, Date.now() % 10000);
+    const { player, rival, playerWeapon, rivalWeapon, opponentAI } = this.selection;
+    this.match = new Match(player, playerWeapon, rival, rivalWeapon);
+    this.ai = makeAI(opponentAI, (Date.now() % 9000) + 1);
 
-    // Stage
+    // Static stage (no scrolling tileSprites for perf)
     this.add.image(C.STAGE_WIDTH / 2, 180, "stage_neon").setDisplaySize(C.STAGE_WIDTH, 360);
-    this.add.tileSprite(C.STAGE_WIDTH / 2, C.GROUND_Y + 40, C.STAGE_WIDTH, 90, "arena_floor");
-
-    // soft neon ground line
+    this.add.rectangle(C.STAGE_WIDTH / 2, C.GROUND_Y + 45, C.STAGE_WIDTH, 90, 0x1a1630);
     this.add
-      .rectangle(C.STAGE_WIDTH / 2, C.GROUND_Y + 1, C.STAGE_WIDTH, 3, 0x6ef3ff, 0.55)
+      .rectangle(C.STAGE_WIDTH / 2, C.GROUND_Y + 1, C.STAGE_WIDTH, 3, 0x6ef3ff, 0.5)
       .setOrigin(0.5, 0);
 
-    // UI chrome
-    this.add.rectangle(C.STAGE_WIDTH / 2, 36, C.STAGE_WIDTH, 72, 0x07060e, 0.82);
-    this.names = this.add
-      .text(16, 8, `${player.name}`, {
+    // UI
+    this.add.rectangle(C.STAGE_WIDTH / 2, 36, C.STAGE_WIDTH, 72, 0x07060e, 0.88);
+    this.add
+      .text(16, 8, `${player.name} · ${playerWeapon.name}`, {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "9px",
+        fontSize: "8px",
         color: player.palette.body,
       });
     this.add
-      .text(C.STAGE_WIDTH - 16, 8, rival.name, {
+      .text(C.STAGE_WIDTH - 16, 8, `${rivalWeapon.name} · ${rival.name}`, {
         fontFamily: '"Press Start 2P", monospace',
-        fontSize: "9px",
+        fontSize: "8px",
         color: rival.palette.body,
       })
       .setOrigin(1, 0);
 
-    // HP / STA tracks
     this.add.rectangle(156, 30, 284, 14, 0x1a1630).setOrigin(0.5);
     this.add.rectangle(C.STAGE_WIDTH - 156, 30, 284, 14, 0x1a1630).setOrigin(0.5);
     this.hp0 = this.add.rectangle(14, 30, 280, 10, 0x3ce89a).setOrigin(0, 0.5);
@@ -100,10 +84,18 @@ export class FightScene extends Phaser.Scene {
     this.sta1 = this.add.rectangle(C.STAGE_WIDTH - 14, 48, 280, 6, 0xffb86b).setOrigin(1, 0.5);
 
     this.timerText = this.add
-      .text(C.STAGE_WIDTH / 2, 28, "60", {
+      .text(C.STAGE_WIDTH / 2, 28, "90", {
         fontFamily: '"Press Start 2P", monospace',
         fontSize: "16px",
         color: "#e8e4ff",
+      })
+      .setOrigin(0.5);
+
+    this.moveLabel = this.add
+      .text(C.STAGE_WIDTH / 2, 58, "", {
+        fontFamily: '"Press Start 2P", monospace',
+        fontSize: "7px",
+        color: "#7a7599",
       })
       .setOrigin(0.5);
 
@@ -118,14 +110,18 @@ export class FightScene extends Phaser.Scene {
       .setDepth(30);
 
     this.add
-      .text(C.STAGE_WIDTH / 2, C.STAGE_HEIGHT - 18, "A/D move  W jump  J light  K heavy  L shield  ·  ESC menu", {
-        fontFamily: '"Press Start 2P", monospace',
-        fontSize: "6px",
-        color: "#4a4660",
-      })
+      .text(
+        C.STAGE_WIDTH / 2,
+        C.STAGE_HEIGHT - 16,
+        "A/D move  W jump  J light(+chain)  K heavy  I special  L shield  ESC",
+        {
+          fontFamily: '"Press Start 2P", monospace',
+          fontSize: "6px",
+          color: "#4a4660",
+        }
+      )
       .setOrigin(0.5);
 
-    // Fighters
     this.spr0 = this.add
       .image(this.match.fighters[0].x, this.match.fighters[0].y, `char_${player.id}_idle`)
       .setOrigin(0.5, 1)
@@ -135,12 +131,22 @@ export class FightScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setScale(2);
 
-    this.shield0 = this.add.rectangle(0, 0, 10, 36, 0x9ad7ff, 0.0).setDepth(5);
-    this.shield1 = this.add.rectangle(0, 0, 10, 36, 0x9ad7ff, 0.0).setDepth(5);
+    this.wpn0 = this.add
+      .image(0, 0, `wpn_${playerWeapon.id}_idle`)
+      .setOrigin(0.35, 0.55)
+      .setScale(2)
+      .setDepth(4);
+    this.wpn1 = this.add
+      .image(0, 0, `wpn_${rivalWeapon.id}_idle`)
+      .setOrigin(0.35, 0.55)
+      .setScale(2)
+      .setDepth(4);
 
-    // intro
-    this.cameras.main.fadeIn(350, 7, 6, 14);
-    this.showCallout("FIGHT", "#6ef3ff", 700);
+    this.shield0 = this.add.rectangle(0, 0, 10, 36, 0x9ad7ff, 0).setDepth(5);
+    this.shield1 = this.add.rectangle(0, 0, 10, 36, 0x9ad7ff, 0).setDepth(5);
+
+    this.cameras.main.fadeIn(250, 7, 6, 14);
+    this.showCallout("FIGHT", "#6ef3ff", 600);
 
     const kb = this.input.keyboard!;
     this.keys = {
@@ -153,6 +159,8 @@ export class FightScene extends Phaser.Scene {
       d: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       j: kb.addKey(Phaser.Input.Keyboard.KeyCodes.J),
       k: kb.addKey(Phaser.Input.Keyboard.KeyCodes.K),
+      i: kb.addKey(Phaser.Input.Keyboard.KeyCodes.I),
+      u: kb.addKey(Phaser.Input.Keyboard.KeyCodes.U),
       z: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
       x: kb.addKey(Phaser.Input.Keyboard.KeyCodes.X),
       l: kb.addKey(Phaser.Input.Keyboard.KeyCodes.L),
@@ -160,49 +168,51 @@ export class FightScene extends Phaser.Scene {
       shift: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
     };
 
-    kb.on("keydown-ESC", () => {
-      this.scene.start("Title");
-    });
+    kb.on("keydown-ESC", () => this.scene.start("Title"));
   }
 
   update(_t: number, dt: number) {
     if (this.ended) return;
 
-    // Fixed 60Hz combat sim (independent of display refresh)
-    this.accum += Math.min(dt, 50);
-    while (this.accum >= this.stepMs && !this.ended) {
+    this.accum += Math.min(dt, 40);
+    let steps = 0;
+    while (this.accum >= this.stepMs && !this.ended && steps < C.MAX_SIM_STEPS_PER_FRAME) {
       this.accum -= this.stepMs;
+      steps += 1;
       this.simStep();
     }
-    this.syncVisuals(dt);
+    // Drop leftover sim debt when lagging (keeps UI smooth)
+    if (this.accum > this.stepMs * 2) this.accum = 0;
+
+    this.syncVisuals();
   }
 
   private simStep() {
+    const k = this.keys;
     const action0 = readPlayerAction({
-      left: this.keys.left.isDown || this.keys.a.isDown,
-      right: this.keys.right.isDown || this.keys.d.isDown,
-      jump: this.keys.up.isDown || this.keys.w.isDown || this.keys.space.isDown,
-      light: this.keys.j.isDown || this.keys.z.isDown,
-      heavy: this.keys.k.isDown || this.keys.x.isDown,
-      block: this.keys.l.isDown || this.keys.c.isDown || this.keys.shift.isDown,
+      left: k.left.isDown || k.a.isDown,
+      right: k.right.isDown || k.d.isDown,
+      jump: k.up.isDown || k.w.isDown || k.space.isDown,
+      light: k.j.isDown || k.z.isDown,
+      heavy: k.k.isDown || k.x.isDown,
+      special: k.i.isDown || k.u.isDown,
+      block: k.l.isDown || k.c.isDown || k.shift.isDown,
     });
     const action1 = this.ai.act(this.match, 1);
     const { done, events } = this.match.step(action0, action1);
 
     for (const ev of events) {
       if (ev.startsWith("parry_whiff_")) {
-        this.showCallout("WHIFF", "#c084fc", 500);
-        this.cameras.main.shake(80, 0.004);
+        this.showCallout("WHIFF", "#c084fc", 450);
+        this.cameras.main.shake(60, 0.003);
       } else if (ev.startsWith("parry_p")) {
-        const you = ev.endsWith("p0");
-        this.showCallout(you ? "PARRY!" : "PARRIED", "#ffe66d", 650);
-        this.cameras.main.flash(80, 255, 230, 100);
-        this.cameras.main.shake(120, 0.008);
+        this.showCallout(ev.endsWith("p0") ? "PARRY!" : "PARRIED", "#ffe66d", 550);
+        this.cameras.main.flash(60, 255, 230, 100);
       } else if (ev.startsWith("guard_break_")) {
-        this.showCallout("GUARD BREAK", "#ff4d6d", 700);
-        this.cameras.main.shake(200, 0.012);
+        this.showCallout("GUARD BREAK", "#ff4d6d", 600);
+        this.cameras.main.shake(140, 0.01);
       } else if (ev.startsWith("hit_p")) {
-        this.cameras.main.shake(60, 0.004);
+        this.cameras.main.shake(40, 0.003);
       }
     }
 
@@ -214,83 +224,102 @@ export class FightScene extends Phaser.Scene {
       this.showCallout(
         draw ? "DRAW" : won ? "YOU WIN" : "DEFEAT",
         won ? "#6ef3ff" : "#ff6b9d",
-        1200
+        1000
       );
-      this.time.delayedCall(1400, () => {
-        this.scene.start("Result", {
-          selection: this.selection,
-          result: res,
-        });
+      this.time.delayedCall(1200, () => {
+        this.scene.start("Result", { selection: this.selection, result: res });
       });
     }
   }
 
-  private syncVisuals(_dt: number) {
+  private syncVisuals() {
     const [f0, f1] = this.match.fighters;
     const p = this.selection.player;
     const r = this.selection.rival;
+    const pw = this.selection.playerWeapon;
+    const rw = this.selection.rivalWeapon;
 
-    this.placeFighter(this.spr0, f0, p.id);
-    this.placeFighter(this.spr1, f1, r.id);
+    this.placeFighter(this.spr0, this.wpn0, f0, p.id, pw.id);
+    this.placeFighter(this.spr1, this.wpn1, f1, r.id, rw.id);
     this.placeShield(this.shield0, f0);
     this.placeShield(this.shield1, f1);
 
-    const hp0w = 280 * (f0.hp / f0.maxHp);
-    const hp1w = 280 * (f1.hp / f1.maxHp);
-    this.hp0.width = Math.max(0, hp0w);
-    this.hp1.width = Math.max(0, hp1w);
+    this.hp0.width = Math.max(0, 280 * (f0.hp / f0.maxHp));
+    this.hp1.width = Math.max(0, 280 * (f1.hp / f1.maxHp));
     this.sta0.width = Math.max(0, 280 * (f0.stamina / f0.maxStamina));
     this.sta1.width = Math.max(0, 280 * (f1.stamina / f1.maxStamina));
 
     const sec = Math.max(0, Math.ceil((this.match.maxFrames - this.match.frame) / C.FPS));
     this.timerText.setText(String(sec).padStart(2, "0"));
+
+    const moveName = f0.attackMove?.name ?? "";
+    if (this.moveLabel.text !== moveName) this.moveLabel.setText(moveName);
   }
 
   private placeFighter(
     spr: Phaser.GameObjects.Image,
+    wpn: Phaser.GameObjects.Image,
     f: (typeof this.match.fighters)[0],
-    charId: string
+    charId: string,
+    weaponId: string
   ) {
     spr.setPosition(f.x, f.y);
     spr.setFlipX(f.facing < 0);
 
-    let key = `char_${charId}_idle`;
+    let bodyKey = `char_${charId}_idle`;
+    let wpnPose: "idle" | "light" | "heavy" | "special" | "block" = "idle";
+
     switch (f.state) {
       case FighterState.WALK:
         this.walkTick++;
         if (this.walkTick % 8 === 0) this.walkFrame = 1 - this.walkFrame;
-        key = `char_${charId}_walk${this.walkFrame}`;
+        bodyKey = `char_${charId}_walk${this.walkFrame}`;
         break;
       case FighterState.JUMP:
-        key = `char_${charId}_jump`;
+        bodyKey = `char_${charId}_jump`;
         break;
-      case FighterState.LIGHT:
-        key = `char_${charId}_light`;
-        break;
-      case FighterState.HEAVY:
-        key = `char_${charId}_heavy`;
+      case FighterState.ATTACK:
+        if (f.attackSlot === "heavy") {
+          bodyKey = `char_${charId}_heavy`;
+          wpnPose = "heavy";
+        } else if (f.attackSlot === "special") {
+          bodyKey = `char_${charId}_special`;
+          wpnPose = "special";
+        } else {
+          bodyKey = `char_${charId}_light`;
+          wpnPose = "light";
+        }
         break;
       case FighterState.BLOCK:
       case FighterState.BLOCKSTUN:
-        key = `char_${charId}_block`;
+        bodyKey = `char_${charId}_block`;
+        wpnPose = "block";
         break;
       case FighterState.PARRY:
-        key = `char_${charId}_parry`;
+        bodyKey = `char_${charId}_parry`;
         break;
       case FighterState.HITSTUN:
       case FighterState.GUARD_BREAK:
       case FighterState.PARRY_WHIFF:
-        key = `char_${charId}_hit`;
+        bodyKey = `char_${charId}_hit`;
         break;
       case FighterState.KO:
-        key = `char_${charId}_ko`;
+        bodyKey = `char_${charId}_ko`;
         break;
       default:
-        key = `char_${charId}_idle`;
+        bodyKey = `char_${charId}_idle`;
     }
-    if (spr.texture.key !== key) spr.setTexture(key);
 
-    // hit flash
+    if (spr.texture.key !== bodyKey) spr.setTexture(bodyKey);
+
+    const wpnKey = `wpn_${weaponId}_${wpnPose}`;
+    if (wpn.texture.key !== wpnKey) wpn.setTexture(wpnKey);
+    wpn.setVisible(f.state !== FighterState.KO);
+    wpn.setPosition(f.x + f.facing * 10, f.y - 38);
+    wpn.setFlipX(f.facing < 0);
+    // Mirror weapon origin when flipped
+    wpn.setOrigin(f.facing < 0 ? 0.65 : 0.35, 0.55);
+
     if (f.state === FighterState.HITSTUN || f.state === FighterState.GUARD_BREAK) {
       spr.setTint(0xffaaaa);
     } else if (f.state === FighterState.PARRY) {
@@ -308,24 +337,17 @@ export class FightScene extends Phaser.Scene {
     }
     const parry = f.inParryWindow;
     rect.setPosition((sr.left + sr.right) / 2, (sr.top + sr.bottom) / 2);
-    rect.setSize(sr.right - sr.left, sr.bottom - sr.top);
+    rect.setSize(Math.max(1, sr.right - sr.left), Math.max(1, sr.bottom - sr.top));
     rect.setFillStyle(parry ? 0xffe66d : 0x9ad7ff, parry ? 0.85 : 0.55);
     rect.setAlpha(1);
   }
 
   private showCallout(text: string, color: string, ms: number) {
-    this.callout.setText(text).setColor(color).setAlpha(1).setScale(1.2);
+    if (this.lastCallout === text && this.callout.alpha > 0.5) return;
+    this.lastCallout = text;
+    this.callout.setText(text).setColor(color).setAlpha(1).setScale(1.15);
     this.tweens.killTweensOf(this.callout);
-    this.tweens.add({
-      targets: this.callout,
-      scale: 1,
-      duration: 120,
-    });
-    this.tweens.add({
-      targets: this.callout,
-      alpha: 0,
-      delay: ms,
-      duration: 280,
-    });
+    this.tweens.add({ targets: this.callout, scale: 1, duration: 100 });
+    this.tweens.add({ targets: this.callout, alpha: 0, delay: ms, duration: 220 });
   }
 }
