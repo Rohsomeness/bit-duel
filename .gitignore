@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+
+# Python game data / trained weights (regenerate locally)
+data/trajectories/*.npz
+data/trajectories/*.json
+!data/trajectories/.gitkeep
+models/*.pt
+models/*.zip
+models/*.onnx
+!models/.gitkeep
+
+# Web
+web/node_modules/
+web/dist/
